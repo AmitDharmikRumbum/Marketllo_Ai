@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name      String
+  email     String    @unique
+  password  String?
+  avatar    String?
+  plan      String    @default("free")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id           String             @id @default(cuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  websiteUrl   String
+  appUrl       String?
+  description  String             @db.Text
+  logoColor    String             @default("#6D28D9")
+  analysisJson Json?
+  status       String             @default("active")
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  accounts     ConnectedAccount[]
+  contentPlan  ContentPlan?
+  posts        Post[]
+  trendingData TrendingData[]
+
+  @@index([userId])
+}
+
+model ConnectedAccount {
+  id           String    @id @default(cuid())
+  productId    String
+  product      Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  platform     String
+  handle       String?
+  accessToken  String    @db.Text
+  refreshToken String?   @db.Text
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([productId, platform])
+  @@index([productId])
+}
+
+model ContentPlan {
+  id           String   @id @default(cuid())
+  productId    String   @unique
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  postsPerWeek Int      @default(6)
+  contentMix   Json
+  bestTimes    Json
+  voiceStyle   String   @default("professional")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Post {
+  id             String    @id @default(cuid())
+  productId      String
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  platform       String
+  type           String
+  caption        String    @db.Text
+  imageUrl       String?
+  videoUrl       String?
+  hashtags       Json?
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+  status         String    @default("draft")
+  bufferPostId   String?
+  engagementJson Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([productId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model TrendingData {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  keywords  Json
+  hashtags  Json
+  fetchedAt DateTime @default(now())
+
+  @@index([productId])
+}

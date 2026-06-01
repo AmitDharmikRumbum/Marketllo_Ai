@@ -1,26 +1,174 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Marketify brand colors */
+  --color-primary:       #6D28D9;
+  --color-primary-hover: #5B21B6;
+  --color-primary-bg:    #EDE9FE;
+  --color-primary-light: #A78BFA;
+  --color-green:         #059669;
+  --color-green-bg:      #D1FAE5;
+  --color-amber:         #D97706;
+  --color-amber-bg:      #FEF3C7;
+  --color-red:           #DC2626;
+  --color-red-bg:        #FEE2E2;
+
+  --color-text:    #0F0E1A;
+  --color-mid:     #3D3D5C;
+  --color-muted:   #6C6C8A;
+  --color-subtle:  #9898B8;
+  --color-border:  #EAEAF4;
+  --color-border2: #C8C8E0;
+  --color-bg:      #F7F6FF;
+  --color-white:   #FFFFFF;
+
+  /* shadcn mappings */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --color-card: var(--color-white);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--color-white);
+  --color-popover-foreground: var(--color-text);
+  --color-secondary: var(--color-primary-bg);
+  --color-secondary-foreground: var(--color-primary);
+  --color-accent: var(--color-primary-bg);
+  --color-accent-foreground: var(--color-primary);
+  --color-destructive: var(--color-red);
+  --color-input: var(--color-border2);
+  --color-ring: var(--color-primary);
+
+  /* radius */
+  --radius: 0.75rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-full: 9999px;
+
+  /* font */
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+
+  /* shadcn sidebar */
+  --color-sidebar: var(--color-white);
+  --color-sidebar-foreground: var(--color-text);
+  --color-sidebar-primary: var(--color-primary);
+  --color-sidebar-primary-foreground: var(--color-white);
+  --color-sidebar-accent: var(--color-primary-bg);
+  --color-sidebar-accent-foreground: var(--color-primary);
+  --color-sidebar-border: var(--color-border);
+  --color-sidebar-ring: var(--color-primary);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: #F7F6FF;
+  --foreground: #0F0E1A;
+  --card: #FFFFFF;
+  --card-foreground: #0F0E1A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F0E1A;
+  --primary: #6D28D9;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EDE9FE;
+  --secondary-foreground: #6D28D9;
+  --muted: #EDE9FE;
+  --muted-foreground: #6C6C8A;
+  --accent: #EDE9FE;
+  --accent-foreground: #6D28D9;
+  --destructive: #DC2626;
+  --border: #EAEAF4;
+  --input: #C8C8E0;
+  --ring: #6D28D9;
+  --radius: 0.75rem;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0F0E1A;
+  --sidebar-primary: #6D28D9;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #EDE9FE;
+  --sidebar-accent-foreground: #6D28D9;
+  --sidebar-border: #EAEAF4;
+  --sidebar-ring: #6D28D9;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-[#F7F6FF] text-[#0F0E1A] font-sans;
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    scroll-behavior: smooth;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Robot bob animation */
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-bob { animation: bob 3s ease-in-out infinite; }
+
+/* Floating cards */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float { animation: float 7s ease-in-out infinite; }
+.animate-float-slow { animation: float 8s ease-in-out infinite 1s; }
+
+/* Marquee */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee { animation: marquee 22s linear infinite; }
+
+/* Pulse dot */
+@keyframes pulsedot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulsedot { animation: pulsedot 2s ease-in-out infinite; }
+
+/* Panel slide in */
+@keyframes panIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes panBack {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-pan-in { animation: panIn 0.3s ease both; }
+.animate-pan-back { animation: panBack 0.3s ease both; }
+
+/* Scroll reveal */
+.fu {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.65s ease, transform 0.65s ease;
+}
+.fu.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Card shadow */
+.shadow-card {
+  box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.04);
+}
+.shadow-card-hover {
+  box-shadow: 0 10px 28px rgba(109,40,217,.1);
+}
+.shadow-btn {
+  box-shadow: 0 6px 20px rgba(109,40,217,.35);
+}
+.shadow-auth {
+  box-shadow: 0 8px 40px rgba(80,40,160,.13);
 }
