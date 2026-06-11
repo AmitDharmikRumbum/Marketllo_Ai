@@ -13,5 +13,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ user: null }, { status: 401 });
   }
 
-  return NextResponse.json({ user: payload.user });
+  // DEBUG: return full payload to trace name issue
+  return NextResponse.json({ user: payload.user, _debug: { fullPayloadUser: payload.user, eazeTokenFirst10: payload.eazeToken?.slice(0,10) } });
 }
