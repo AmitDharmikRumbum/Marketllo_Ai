@@ -107,5 +107,22 @@ export async function GET(req: NextRequest) {
     results.create_scheduled_post = { error: String(e) };
   }
 
+  // ── 5. Session payload + live users/show ─────────────────────────────────
+  results.session_payload = session;
+
+  try {
+    const url = `${BASE}/${PROJECT}/${VERSION}/users/show/${session.user.id}`;
+    const res = await fetch(url, {
+      headers: { ...hdrs(), TOKEN: (session as Record<string, string>).eazeToken ?? "" },
+      cache: "no-store",
+    });
+    const text = await res.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = { raw: text.slice(0, 500) }; }
+    results.users_show = { status: res.status, body: parsed };
+  } catch (e) {
+    results.users_show = { error: String(e) };
+  }
+
   return NextResponse.json(results, { status: 200 });
 }
