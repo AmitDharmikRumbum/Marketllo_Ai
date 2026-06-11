@@ -1,194 +1,474 @@
 "use client";
 
+import { useState } from "react";
 import { useOnboarding } from "@/store/onboarding";
 import { useRouter } from "next/navigation";
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const WEEK_PREVIEW = [
-  { day: "Mon", type: "Post", icon: "📝", time: "11:00 AM" },
-  { day: "Tue", type: "Reel", icon: "🎬", time: "7:00 PM" },
-  { day: "Wed", type: "Carousel", icon: "🎠", time: "11:00 AM" },
-  { day: "Thu", type: "Post", icon: "📝", time: "9:00 AM" },
-  { day: "Fri", type: "Reel", icon: "🎬", time: "7:00 PM" },
-  { day: "Sat", type: "Carousel", icon: "🎠", time: "11:00 AM" },
-  { day: "Sun", type: "Rest", icon: "💬", time: "Flexible" },
+
+const TIMES = [
+  "6:00 AM", "7:00 AM", "8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM",
+  "12:00 PM", "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM",
+  "6:00 PM", "7:00 PM", "8:00 PM", "9:00 PM",
 ];
 
-const BEST_TIMES = [
-  { platform: "Instagram", times: "11:00 AM, 7:00 PM", color: "#E1306C" },
-  { platform: "LinkedIn", times: "9:00 AM, 1:00 PM", color: "#0A66C2" },
-  { platform: "X (Twitter)", times: "10:00 AM, 5:00 PM", color: "#000000" },
-];
+// Which day indices to enable for N posts/week
+const DAY_DISTRIBUTION: Record<number, number[]> = {
+  0: [],
+  1: [2],
+  2: [1, 4],
+  3: [0, 2, 4],
+  4: [0, 1, 3, 4],
+  5: [0, 1, 2, 3, 4],
+  6: [0, 1, 2, 3, 4, 5],
+  7: [0, 1, 2, 3, 4, 5, 6],
+};
+
+// Credit cost per content type
+const CREDIT_COST: Record<string, number> = {
+  Post: 1, Tweet: 1, Article: 1,
+  Carousel: 2, Thread: 2, Short: 2,
+  Reel: 3, Video: 3,
+};
+
+const BUDGET = 50; // weekly credit budget for the progress bar
+
+interface PlatformCfg {
+  name: string;
+  color: string;
+  types: string[];
+  defaultTime: string;
+}
+
+const PLATFORM_CFG: Record<string, PlatformCfg> = {
+  instagram: { name: "Instagram", color: "#E1306C", types: ["Reel", "Post", "Carousel"], defaultTime: "11:00 AM" },
+  linkedin:  { name: "LinkedIn",  color: "#0A66C2", types: ["Post", "Article"],           defaultTime: "9:00 AM"  },
+  twitter:   { name: "Twitter",   color: "#1DA1F2", types: ["Tweet", "Thread"],            defaultTime: "10:00 AM" },
+  youtube:   { name: "YouTube",   color: "#FF0000", types: ["Video", "Short"],             defaultTime: "3:00 PM"  },
+  tiktok:    { name: "TikTok",    color: "#010101", types: ["Video"],                      defaultTime: "7:00 PM"  },
+  facebook:  { name: "Facebook",  color: "#1877F2", types: ["Post", "Reel"],               defaultTime: "12:00 PM" },
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface DaySlot {
+  enabled: boolean;
+  type: string;
+  time: string;
+}
+
+interface PlatformSchedule {
+  platform: string;
+  postsPerWeek: number;
+  days: DaySlot[]; // length 7, index 0=Mon … 6=Sun
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildDefaultSchedule(platform: string): PlatformSchedule {
+  const cfg = PLATFORM_CFG[platform] ?? { types: ["Post"], defaultTime: "10:00 AM" };
+  const defaultPosts = 3;
+  const enabledDays = new Set(DAY_DISTRIBUTION[defaultPosts] ?? []);
+  return {
+    platform,
+    postsPerWeek: defaultPosts,
+    days: Array.from({ length: 7 }, (_, i) => ({
+      enabled: enabledDays.has(i),
+      type: cfg.types[0],
+      time: cfg.defaultTime,
+    })),
+  };
+}
+
+/** Redistribute enabled days for a new postsPerWeek, preserving existing type/time. */
+function redistributeDays(schedule: PlatformSchedule, newCount: number): PlatformSchedule {
+  const newEnabledSet = new Set(DAY_DISTRIBUTION[newCount] ?? []);
+  return {
+    ...schedule,
+    postsPerWeek: newCount,
+    days: schedule.days.map((slot, i) => ({
+      ...slot,
+      enabled: newEnabledSet.has(i),
+    })),
+  };
+}
+
+function creditCost(type: string) {
+  return CREDIT_COST[type] ?? 1;
+}
+
+function scheduleTotalCredits(sched: PlatformSchedule): number {
+  return sched.days.reduce((sum, d) => sum + (d.enabled ? creditCost(d.type) : 0), 0);
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function Step5Strategy() {
   const router = useRouter();
-  const { strategy, setStrategy, setStep } = useOnboarding();
-  const { postsPerWeek, contentMix } = strategy;
-  const total = contentMix.posts + contentMix.reels + contentMix.carousels;
+  const { product, analysis, selectedPlatforms, strategy, setStep, reset, productId } = useOnboarding();
 
-  const pct = (n: number) => Math.round((n / Math.max(total, 1)) * 100);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveStep, setSaveStep] = useState<"idle" | "saving" | "generating" | "done">("idle");
 
-  const adjust = (key: keyof typeof contentMix, delta: number) => {
-    const next = Math.max(0, contentMix[key] + delta);
-    setStrategy({ contentMix: { ...contentMix, [key]: next } });
+  // Sort selectedPlatforms by analysis score descending; unseen platforms go last.
+  const platformOrder = [...selectedPlatforms].sort((a, b) => {
+    const scoreA = analysis?.platforms.find((p) => p.platform === a)?.score ?? -1;
+    const scoreB = analysis?.platforms.find((p) => p.platform === b)?.score ?? -1;
+    return scoreB - scoreA;
+  });
+
+  // Lazy-initialise schedules once.
+  const [schedules, setSchedules] = useState<PlatformSchedule[]>(() =>
+    platformOrder.map(buildDefaultSchedule)
+  );
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const totalCredits = schedules.reduce((sum, s) => sum + scheduleTotalCredits(s), 0);
+  const remainingCredits = BUDGET - totalCredits;
+  const barPct = Math.min(100, Math.round((totalCredits / BUDGET) * 100));
+
+  // ── Schedule mutators ──────────────────────────────────────────────────────
+
+  function updateSchedule(platform: string, updater: (s: PlatformSchedule) => PlatformSchedule) {
+    setSchedules((prev) => prev.map((s) => (s.platform === platform ? updater(s) : s)));
+  }
+
+  function changePosts(platform: string, delta: number) {
+    updateSchedule(platform, (s) => {
+      const next = Math.max(1, Math.min(7, s.postsPerWeek + delta));
+      return redistributeDays(s, next);
+    });
+  }
+
+  function toggleDay(platform: string, dayIdx: number) {
+    updateSchedule(platform, (s) => {
+      const slot = s.days[dayIdx];
+      const cfg = PLATFORM_CFG[platform] ?? { types: ["Post"], defaultTime: "10:00 AM" };
+      const newEnabled = !slot.enabled;
+      const newDays = s.days.map((d, i) =>
+        i === dayIdx ? { ...d, enabled: newEnabled } : d
+      );
+      const newCount = newDays.filter((d) => d.enabled).length;
+      return { ...s, postsPerWeek: newCount, days: newDays };
+    });
+  }
+
+  function cycleType(platform: string, dayIdx: number) {
+    const cfg = PLATFORM_CFG[platform] ?? { types: ["Post"], defaultTime: "10:00 AM" };
+    updateSchedule(platform, (s) => {
+      const slot = s.days[dayIdx];
+      const types = cfg.types;
+      const nextType = types[(types.indexOf(slot.type) + 1) % types.length];
+      const newDays = s.days.map((d, i) => (i === dayIdx ? { ...d, type: nextType } : d));
+      return { ...s, days: newDays };
+    });
+  }
+
+  function changeTime(platform: string, dayIdx: number, time: string) {
+    updateSchedule(platform, (s) => {
+      const newDays = s.days.map((d, i) => (i === dayIdx ? { ...d, time } : d));
+      return { ...s, days: newDays };
+    });
+  }
+
+  // ── Save ───────────────────────────────────────────────────────────────────
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError("");
+    setSaveStep("saving");
+
+    try {
+      // ── Step 1: Save product only if not already created in Step 1 ───────────
+      if (!productId) {
+        const res = await fetch("/api/products/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product, analysis, selectedPlatforms, strategy, schedules }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (res.status === 401) {
+            setSaveError("You need to be logged in. Redirecting to register…");
+            setTimeout(() => router.push("/register"), 1500);
+          } else {
+            setSaveError((data.error || "Failed to save.") + (data.detail ? ` (${data.detail})` : ""));
+          }
+          setSaving(false);
+          setSaveStep("idle");
+          return;
+        }
+      }
+
+      // ── Step 2: Save schedules + generate AI content ──────────────────────────
+      if (productId && analysis) {
+        setSaveStep("generating");
+        try {
+          await fetch("/api/save-strategy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productId, schedules, analysis }),
+          });
+        } catch (err) {
+          console.error("[Step5] save-strategy error:", err);
+          // non-fatal — product is saved, strategy may retry later
+        }
+      }
+
+      setSaveStep("done");
+      const finalProductId = productId; // capture before reset clears it
+      reset();
+      router.push(finalProductId ? `/dashboard/${finalProductId}` : "/projects?refresh=1");
+    } catch {
+      setSaveError("Network error. Please check your connection.");
+      setSaving(false);
+      setSaveStep("idle");
+    }
   };
 
-  const handleSave = () => {
-    router.push("/projects");
-  };
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-8 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold text-[#0F0E1A] tracking-tight mb-1">AI Strategy Setup ✨</h1>
-          <p className="text-sm text-[#6C6C8A]">Review your AI-generated strategy and customize it to fit your goals.</p>
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-[#6D28D9] border border-[#C8C8E0] rounded-xl hover:border-[#6D28D9] transition-all">
-          How AI creates strategy
-        </button>
-      </div>
-
-      {/* AI recommendation banner */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-[#EDE9FE] to-[#F5F0FF] rounded-xl p-4 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#6D28D9] rounded-lg flex items-center justify-center flex-shrink-0">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5z" fill="white" opacity=".4"/><path d="M12 2L2 7l10 5 10-5-10-5z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </div>
+    <div className="flex flex-col h-full">
+      {/* ── Sticky credit bar ───────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-10 bg-white border-b border-[#EAEAF4] px-8 py-4">
+        <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-xs font-bold text-[#0F0E1A]">Here&apos;s what AI recommends for you</div>
-            <div className="text-xs text-[#6C6C8A]">Based on your industry, audience, and goals, we suggest the following weekly strategy.</div>
+            <span className="text-xl font-extrabold text-[#0F0E1A]">{totalCredits}</span>
+            <span className="text-sm text-[#6C6C8A] ml-1.5">credits / week</span>
+          </div>
+          <div className="text-right">
+            <span
+              className={`text-xs font-semibold ${remainingCredits >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}
+            >
+              {remainingCredits >= 0
+                ? `${remainingCredits} credits remaining`
+                : `${Math.abs(remainingCredits)} credits over budget`}
+            </span>
+            <span className="text-[11px] text-[#9898B8] ml-1">of {BUDGET}-credit budget</span>
           </div>
         </div>
-        <button className="flex items-center gap-1.5 px-3 py-2 bg-[#6D28D9] text-white text-xs font-semibold rounded-lg hover:bg-[#5B21B6] transition-all">
-          🔄 Regenerate Strategy
-        </button>
+        <div className="w-full h-2 bg-[#F7F6FF] rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-300"
+            style={{
+              width: `${barPct}%`,
+              background: remainingCredits >= 0 ? "#6D28D9" : "#DC2626",
+            }}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        {/* Posting frequency */}
-        <div className="bg-white border border-[#EAEAF4] rounded-2xl p-4 shadow-[0_2px_8px_rgba(0,0,0,.04)]">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-6 h-6 bg-[#EDE9FE] rounded-lg flex items-center justify-center">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="#6D28D9" strokeWidth="1.6"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#6D28D9" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </div>
-            <span className="text-xs font-bold text-[#0F0E1A]">Posting Frequency</span>
-          </div>
-          <p className="text-[11px] text-[#9898B8] mb-3">How often do you want to post?</p>
-          <div className="flex items-center justify-between mb-2">
-            <button onClick={() => setStrategy({ postsPerWeek: Math.max(1, postsPerWeek - 1) })} className="w-7 h-7 rounded-lg bg-[#F7F6FF] border border-[#EAEAF4] text-[#6D28D9] font-bold hover:bg-[#EDE9FE] transition-all flex items-center justify-center">−</button>
-            <div className="text-center">
-              <span className="text-2xl font-extrabold text-[#0F0E1A]">{postsPerWeek}</span>
-              <span className="text-sm text-[#6C6C8A] font-medium ml-1">posts per week</span>
-            </div>
-            <button onClick={() => setStrategy({ postsPerWeek: postsPerWeek + 1 })} className="w-7 h-7 rounded-lg bg-[#F7F6FF] border border-[#EAEAF4] text-[#6D28D9] font-bold hover:bg-[#EDE9FE] transition-all flex items-center justify-center">+</button>
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-[#059669]">
-            <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-4" stroke="#059669" strokeWidth="1.5" strokeLinecap="round"/></svg>
-            Recommended: 4–7 posts per week
-          </div>
-        </div>
+      {/* ── Page header ─────────────────────────────────────────────────────── */}
+      <div className="px-8 pt-6 pb-2">
+        <h1 className="text-2xl font-extrabold text-[#0F0E1A] tracking-tight mb-1">
+          Content Strategy
+        </h1>
+        <p className="text-sm text-[#6C6C8A]">
+          Customise your weekly posting schedule for each platform.
+        </p>
+      </div>
 
-        {/* Content Mix */}
-        <div className="bg-white border border-[#EAEAF4] rounded-2xl p-4 shadow-[0_2px_8px_rgba(0,0,0,.04)]">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-6 h-6 bg-[#EDE9FE] rounded-lg flex items-center justify-center">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#6D28D9" strokeWidth="1.6"/><path d="M12 3v9l6 3" stroke="#6D28D9" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </div>
-            <span className="text-xs font-bold text-[#0F0E1A]">Content Mix</span>
-          </div>
-          <p className="text-[11px] text-[#9898B8] mb-3">Customize the types of content you want to publish.</p>
-          <div className="space-y-2.5">
-            {[
-              { key: "posts" as const, label: "Posts", color: "#6D28D9" },
-              { key: "reels" as const, label: "Reels", color: "#DC2626" },
-              { key: "carousels" as const, label: "Carousels", color: "#059669" },
-            ].map(({ key, label, color }) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className="text-xs text-[#3D3D5C] w-16">{label}</span>
-                <button onClick={() => adjust(key, -1)} className="w-5 h-5 text-xs font-bold bg-[#F7F6FF] rounded hover:bg-[#EDE9FE] transition-all">−</button>
-                <span className="text-sm font-bold text-[#0F0E1A] w-4 text-center">{contentMix[key]}</span>
-                <button onClick={() => adjust(key, 1)} className="w-5 h-5 text-xs font-bold bg-[#F7F6FF] rounded hover:bg-[#EDE9FE] transition-all">+</button>
-                <span className="text-[10px] font-semibold w-7 text-right" style={{ color }}>{pct(contentMix[key])}%</span>
-                <div className="flex-1 h-1 bg-[#F7F6FF] rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct(contentMix[key])}%`, background: color }} />
+      {/* ── Platform cards (scrollable) ──────────────────────────────────────── */}
+      <div className="flex-1 overflow-auto px-8 py-4 space-y-4">
+        {schedules.map((sched) => {
+          const cfg = PLATFORM_CFG[sched.platform] ?? {
+            name: sched.platform,
+            color: "#6D28D9",
+            types: ["Post"],
+            defaultTime: "10:00 AM",
+          };
+          const platformData = analysis?.platforms.find(
+            (p) => p.platform === sched.platform
+          );
+          const score = platformData?.score;
+          const weeklyCredits = scheduleTotalCredits(sched);
+
+          return (
+            <div
+              key={sched.platform}
+              className="bg-white border border-[#EAEAF4] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,.04)] overflow-hidden"
+            >
+              {/* Card header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#F0F0F8]">
+                <div className="flex items-center gap-3">
+                  {/* Platform icon */}
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+                    style={{ background: cfg.color }}
+                  >
+                    {cfg.name[0]}
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-[#0F0E1A]">{cfg.name}</span>
+                    {score !== undefined && (
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-bold rounded-full">
+                        {score}% Match
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* Posts/week counter */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => changePosts(sched.platform, -1)}
+                      disabled={sched.postsPerWeek <= 1}
+                      className="w-6 h-6 rounded-md bg-[#F7F6FF] border border-[#EAEAF4] text-[#6D28D9] text-xs font-bold flex items-center justify-center hover:bg-[#EDE9FE] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    >
+                      −
+                    </button>
+                    <span className="text-sm font-bold text-[#0F0E1A] w-5 text-center">
+                      {sched.postsPerWeek}
+                    </span>
+                    <button
+                      onClick={() => changePosts(sched.platform, 1)}
+                      disabled={sched.postsPerWeek >= 7}
+                      className="w-6 h-6 rounded-md bg-[#F7F6FF] border border-[#EAEAF4] text-[#6D28D9] text-xs font-bold flex items-center justify-center hover:bg-[#EDE9FE] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    >
+                      +
+                    </button>
+                    <span className="text-[11px] text-[#9898B8]">posts/week</span>
+                  </div>
+
+                  {/* Weekly credit cost */}
+                  <div className="text-[11px] font-semibold text-[#6D28D9] bg-[#F7F6FF] px-2.5 py-1 rounded-lg">
+                    {weeklyCredits} credits/week
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="mt-2 text-center text-[11px] font-semibold text-[#3D3D5C] bg-[#F7F6FF] rounded-lg py-1.5">
-            Total: {total} posts per week
-          </div>
-        </div>
 
-        {/* Best Times */}
-        <div className="bg-white border border-[#EAEAF4] rounded-2xl p-4 shadow-[0_2px_8px_rgba(0,0,0,.04)]">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-6 h-6 bg-[#EDE9FE] rounded-lg flex items-center justify-center">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#6D28D9" strokeWidth="1.6"/><path d="M12 7v5l3 3" stroke="#6D28D9" strokeWidth="1.6" strokeLinecap="round"/></svg>
-            </div>
-            <span className="text-xs font-bold text-[#0F0E1A]">Best Times to Post</span>
-          </div>
-          <p className="text-[11px] text-[#9898B8] mb-3">AI-recommended times based on audience activity</p>
-          <div className="space-y-2.5">
-            {BEST_TIMES.map((t) => (
-              <div key={t.platform} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold text-white" style={{ background: t.color }}>{t.platform[0]}</div>
-                  <span className="text-xs text-[#3D3D5C]">{t.platform}</span>
-                </div>
-                <span className="text-[11px] font-semibold text-[#0F0E1A]">{t.times}</span>
+              {/* 7-day grid */}
+              <div className="grid grid-cols-7 gap-2 p-4">
+                {sched.days.map((slot, dayIdx) => {
+                  if (slot.enabled) {
+                    return (
+                      <div
+                        key={dayIdx}
+                        className="relative flex flex-col gap-1.5 bg-white border border-[#6D28D9] rounded-xl p-2 cursor-default"
+                        style={{ minHeight: 90 }}
+                      >
+                        {/* Day label */}
+                        <div className="text-[10px] font-bold text-[#6D28D9] text-center">
+                          {DAYS[dayIdx]}
+                        </div>
+
+                        {/* Dismiss button */}
+                        <button
+                          onClick={() => toggleDay(sched.platform, dayIdx)}
+                          className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-[#EDE9FE] text-[#6D28D9] text-[9px] font-bold flex items-center justify-center hover:bg-[#6D28D9] hover:text-white transition-all leading-none"
+                          title="Disable this day"
+                        >
+                          ×
+                        </button>
+
+                        {/* Content type pill (cycling) */}
+                        <button
+                          onClick={() => cycleType(sched.platform, dayIdx)}
+                          className="text-[10px] font-bold text-white rounded-full px-1.5 py-0.5 truncate text-center transition-opacity hover:opacity-80"
+                          style={{ background: cfg.color }}
+                          title="Click to change type"
+                        >
+                          {slot.type}
+                        </button>
+
+                        {/* Time selector */}
+                        <select
+                          value={slot.time}
+                          onChange={(e) => changeTime(sched.platform, dayIdx, e.target.value)}
+                          className="w-full text-[10px] text-[#6C6C8A] bg-[#F7F6FF] border border-[#EAEAF4] rounded-lg px-1 py-0.5 appearance-none text-center cursor-pointer focus:outline-none focus:border-[#6D28D9]"
+                        >
+                          {TIMES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Credit badge */}
+                        <div className="text-center text-[9px] text-[#9898B8] font-medium">
+                          {creditCost(slot.type)} cr
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Disabled cell
+                  return (
+                    <button
+                      key={dayIdx}
+                      onClick={() => toggleDay(sched.platform, dayIdx)}
+                      className="flex flex-col items-center justify-center gap-1 bg-[#F7F6FF] border border-dashed border-[#C8C8E0] rounded-xl p-2 hover:border-[#6D28D9] hover:bg-[#F3F0FE] transition-all group"
+                      style={{ minHeight: 90 }}
+                      title="Click to enable this day"
+                    >
+                      <div className="text-[10px] font-semibold text-[#9898B8] group-hover:text-[#6D28D9]">
+                        {DAYS[dayIdx]}
+                      </div>
+                      <div className="text-[10px] text-[#C8C8E0] group-hover:text-[#6D28D9]">Off</div>
+                      <div className="text-[9px] text-[#C8C8E0] group-hover:text-[#6D28D9]">+ add</div>
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Weekly preview */}
-      <div className="bg-white border border-[#EAEAF4] rounded-2xl p-4 mb-4 shadow-[0_2px_8px_rgba(0,0,0,.04)]">
-        <div className="flex items-center gap-2 mb-3">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="#6D28D9" strokeWidth="1.6"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#6D28D9" strokeWidth="1.6" strokeLinecap="round"/></svg>
-          <span className="text-sm font-bold text-[#0F0E1A]">Weekly Preview</span>
-          <span className="text-xs text-[#9898B8]">See how your week will look like.</span>
-        </div>
-        <div className="grid grid-cols-7 gap-2">
-          {WEEK_PREVIEW.map((w) => (
-            <div key={w.day} className="text-center">
-              <div className="text-xs font-semibold text-[#9898B8] mb-2">{w.day}</div>
-              <div className="bg-[#F7F6FF] rounded-xl p-2 flex flex-col items-center gap-1">
-                <span className="text-base">{w.icon}</span>
-                <span className="text-[10px] font-bold text-[#3D3D5C]">{w.type}</span>
-                <span className="text-[9px] text-[#9898B8]">{w.time}</span>
+              {/* Credit legend */}
+              <div className="px-4 pb-3 flex items-center gap-3 flex-wrap">
+                {cfg.types.map((t) => (
+                  <span key={t} className="text-[10px] text-[#9898B8]">
+                    <span
+                      className="inline-block w-2 h-2 rounded-full mr-1"
+                      style={{ background: cfg.color, opacity: 0.7 }}
+                    />
+                    {t} · {creditCost(t)} cr
+                  </span>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* AI optimize banner */}
-      <div className="bg-[#F7F6FF] border border-[#EAEAF4] rounded-xl p-3 flex items-center gap-4 mb-4">
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5z" fill="#6D28D9" opacity=".3"/><path d="M12 2L2 7l10 5 10-5-10-5z" stroke="#6D28D9" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          <div>
-            <div className="text-xs font-bold text-[#0F0E1A]">AI will optimize as we go</div>
-            <div className="text-[11px] text-[#6C6C8A]">Our AI will analyze performance and continuously improve your strategy.</div>
+      {/* ── Bottom bar ───────────────────────────────────────────────────────── */}
+      <div className="px-8 py-5 border-t border-[#EAEAF4] bg-white">
+        {saveError && (
+          <div className="mb-3 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-xs font-medium text-red-600">
+            {saveError}
           </div>
-        </div>
-        {["Analyze Performance", "Learn What Works", "Optimize Next Week"].map((step, i) => (
-          <div key={step} className="flex items-center gap-2">
-            {i > 0 && <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4 8h8M8 4l4 4-4 4" stroke="#9898B8" strokeWidth="1.2" strokeLinecap="round"/></svg>}
-            <span className={`text-xs font-semibold ${i === 0 ? "text-[#6D28D9]" : i === 1 ? "text-[#059669]" : "text-[#D97706]"}`}>{step.split(" ")[0]}</span>
-          </div>
-        ))}
-      </div>
+        )}
 
-      <div className="flex items-center justify-between">
-        <button onClick={() => setStep(4)} className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-[#6C6C8A] border border-[#C8C8E0] rounded-xl hover:text-[#0F0E1A] transition-all">
-          ← Back
-        </button>
-        <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2.5 bg-[#6D28D9] text-white text-sm font-semibold rounded-xl hover:bg-[#5B21B6] hover:shadow-[0_6px_20px_rgba(109,40,217,.35)] transition-all">
-          Save & Start Generating Content →
-        </button>
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setStep(4)}
+            disabled={saving}
+            className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-[#6C6C8A] border border-[#C8C8E0] rounded-xl hover:text-[#0F0E1A] hover:border-[#9898B8] transition-all disabled:opacity-50"
+          >
+            ← Back
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-6 py-2.5 bg-[#6D28D9] text-white text-sm font-semibold rounded-xl hover:bg-[#5B21B6] hover:shadow-[0_6px_20px_rgba(109,40,217,.35)] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <>
+                <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="white" strokeWidth="3" strokeOpacity=".3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="white" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+                {saveStep === "generating" ? "Generating content…" : "Saving…"}
+              </>
+            ) : (
+              "Save & Start Generating Content →"
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useOnboarding } from "@/store/onboarding";
+import { useProjectsStore } from "@/store/projects";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,13 +59,15 @@ function mapProduct(p: EazeProduct): DisplayProject {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ProjectsPage() {
+function ProjectsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldRefresh = searchParams.get("refresh") === "1";
+
+  const { projects, user, loaded, setProjects, setUser, setLoaded } = useProjectsStore();
   const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
-  const [projects, setProjects] = useState<DisplayProject[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!loaded);
   const [loadingProductId, setLoadingProductId] = useState<string | null>(null);
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
 
   const handleProductClick = async (productId: string) => {
     setLoadingProductId(productId);
@@ -105,6 +108,11 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
+    // Skip fetch if already loaded and not forced refresh
+    if (loaded && !shouldRefresh) return;
+
+    setLoading(true);
+
     // Load current user
     fetch("/api/auth/me")
       .then((r) => r.json())
@@ -116,17 +124,19 @@ export default function ProjectsPage() {
       .then((r) => r.json())
       .then((d) => {
         if (d.products) setProjects(d.products.map(mapProduct));
+        setLoaded(true);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldRefresh]);
 
   const filtered = filter === "all" ? projects : projects.filter((p) => p.status === filter);
   const activeCount = projects.filter((p) => p.status === "active").length;
   const pausedCount = projects.filter((p) => p.status === "paused").length;
 
-  const userInitial = user?.name?.[0]?.toUpperCase() || "U";
-  const userName = user?.name?.split(" ")[0] || "You";
+  const userInitial = user?.name?.[0]?.toUpperCase() ?? "U";
+  const userName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "You";
 
   return (
     <div className="min-h-screen bg-[#F7F6FF]">
@@ -310,5 +320,13 @@ export default function ProjectsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ProjectsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#F7F6FF] flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#6D28D9] border-t-transparent rounded-full animate-spin" /></div>}>
+      <ProjectsPageInner />
+    </Suspense>
   );
 }
