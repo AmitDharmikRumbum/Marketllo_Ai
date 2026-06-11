@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eazeQuery, eazeUpdate, toArray, mysqlDate } from "@/lib/eazemyapi";
+// Note: get-ready-posts already JOINs product_platforms so credentials come in one call
 import { publishToLinkedIn } from "@/lib/linkedin-publish";
 
 /**
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
 
   // ── Fetch posts due for publishing ────────────────────────────────────────
-  const result = await eazeQuery("get_ready_posts_for_cron");
+  const result = await eazeQuery("get-ready-posts");
   const posts = toArray<Record<string, string>>(result.data);
 
   if (posts.length === 0) {
@@ -38,8 +39,6 @@ export async function GET(req: NextRequest) {
   for (const post of posts) {
     const postId          = String(post.id              ?? "");
     const platform        = String(post.platform        ?? "").toLowerCase();
-    const productId       = String(post.product_id      ?? "");
-    const platformRecordId = String(post.platform_record_id ?? "");
     const contentText     = String(post.content_text    ?? "");
     let   contentImageUrl = String(post.content_image_url ?? "");
 
@@ -62,32 +61,14 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // ── Fetch platform credentials (eazeShow doesn't work for product_platforms; use custom query) ──
-    let accessToken = "";
-    let memberId    = "";
+    // ── Platform credentials come directly from the JOIN in get-ready-posts ──
+    const accessToken    = String(post.media_access_token ?? "");
+    const memberId       = String(post.platform_user_id   ?? "");
+    const platformStatus = String(post.platform_status    ?? "");
 
-    try {
-      const platResult = await eazeQuery("get_product_platforms", { product_id: productId });
-      const platforms  = toArray<Record<string, string>>(platResult.data);
-      const platformRow = platforms.find((p) => String(p.id) === String(platformRecordId));
-
-      if (!platformRow) {
-        console.error(`[cron/publish] Platform record not found for post ${postId}`);
-        results.push({ postId, success: false, error: "Platform record not found" });
-        continue;
-      }
-
-      if (platformRow.status === "DISABLED") {
-        console.log(`[cron/publish] Platform disabled — skipping post ${postId}`);
-        results.push({ postId, success: false, error: "Platform disabled" });
-        continue;
-      }
-
-      accessToken = platformRow.media_access_token ?? "";
-      memberId    = platformRow.platform_user_id   ?? "";
-    } catch (err) {
-      console.error(`[cron/publish] Could not fetch platform creds for post ${postId}:`, err);
-      results.push({ postId, success: false, error: "Failed to fetch platform credentials" });
+    if (platformStatus === "DISABLED") {
+      console.log(`[cron/publish] Platform disabled — skipping post ${postId}`);
+      results.push({ postId, success: false, error: "Platform disabled" });
       continue;
     }
 
