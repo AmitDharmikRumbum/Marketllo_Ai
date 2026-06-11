@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     const payload: SessionPayload = {
       token: sessionToken,
       eazeToken: user.auth_token ?? "",
-      user: { id: String(user.id), name: user.name ?? "", email: user.email ?? normalizedEmail },
+      user: { id: String(user.id), name: user.name ?? user.full_name ?? user.username ?? "", email: user.email ?? normalizedEmail },
     };
 
     const res = NextResponse.redirect(new URL("/projects", req.url));

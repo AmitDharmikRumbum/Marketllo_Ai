@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const payload: SessionPayload = {
       token: sessionToken,
       eazeToken: user.auth_token ?? "",
-      user: { id: String(user.id), name: user.name ?? "", email: user.email ?? "" },
+      user: { id: String(user.id), name: user.name ?? user.full_name ?? user.username ?? "", email: user.email ?? "" },
     };
 
     const res = NextResponse.json({ success: true, user: payload.user });
