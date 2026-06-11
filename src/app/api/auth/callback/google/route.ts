@@ -79,18 +79,24 @@ export async function GET(req: NextRequest) {
 
     const user = authResult.data;
 
+    // DEBUG — remove after fixing name issue
+    console.log("[google callback] profile:", JSON.stringify({ name: profile.name, given_name: profile.given_name, email: profile.email, id: profile.id }));
+    console.log("[google callback] authResult.data keys:", JSON.stringify(Object.keys(user ?? {})));
+    console.log("[google callback] user.name:", user?.name, "user.full_name:", user?.full_name);
+
     // ── Save platform to users table ──────────────────────────────────────────
     await eazeUpdate("users", user.id, { platform: "google" }, user.auth_token);
 
     // ── Create session ────────────────────────────────────────────────────────
     const sessionToken = await createSession(String(user.id), req);
 
+    const resolvedName = profile.name ?? profile.given_name ?? user?.name ?? user?.full_name ?? "";
+    console.log("[google callback] resolvedName:", resolvedName);
+
     const payload: SessionPayload = {
       token: sessionToken,
       eazeToken: user.auth_token ?? "",
-      // Use profile.name from Google directly — it's always present and correct.
-      // authResult.data may not include the name field depending on EazeMyAPI version.
-      user: { id: String(user.id), name: profile.name ?? user.name ?? "", email: user.email ?? normalizedEmail },
+      user: { id: String(user.id), name: resolvedName, email: user.email ?? normalizedEmail },
     };
 
     const res = NextResponse.redirect(new URL("/projects", req.url));
