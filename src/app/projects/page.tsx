@@ -1,45 +1,132 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useOnboarding } from "@/store/onboarding";
 
-const PROJECTS = [
-  {
-    id: "1", name: "Taskllo", url: "taskllo.com", color: "#6D28D9", status: "active",
-    platforms: ["instagram", "linkedin", "twitter"],
-    followers: "2.4K", followersUp: 18,
-    postsPerWeek: 6, engageRate: "4.2%", engageUp: 12,
-  },
-  {
-    id: "2", name: "DesignFlow", url: "designflow.io", color: "#0891B2", status: "active",
-    platforms: ["instagram", "linkedin", "pinterest", "facebook"],
-    followers: "1.8K", followersUp: 24,
-    postsPerWeek: 8, engageRate: "5.8%", engageUp: 31,
-  },
-  {
-    id: "3", name: "GrowthLab", url: "growthlab.co", color: "#059669", status: "active",
-    platforms: ["linkedin", "twitter", "youtube"],
-    followers: "956", followersUp: 38,
-    postsPerWeek: 4, engageRate: "6.1%", engageUp: 42,
-  },
-  {
-    id: "4", name: "ShopMate", url: "shopmate.app", color: "#D97706", status: "paused",
-    platforms: ["instagram", "facebook", "tiktok"],
-    followers: "3.1K", followersUp: 0,
-    postsPerWeek: 0, engageRate: "2.1%", engageUp: -8,
-  },
-];
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface EazeProduct {
+  id: string | number;
+  product_name: string;
+  website_url: string;
+  appstore_url?: string | null;
+  playstore_url?: string | null;
+  product_desc?: string;
+  logo_url?: string;
+  status?: string;
+  created_at?: string;
+}
+
+interface DisplayProject {
+  id: string;
+  name: string;
+  url: string;
+  desc: string;
+  color: string;
+  status: "active" | "paused";
+  platforms: string[];
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const PLATFORM_COLORS: Record<string, string> = {
   instagram: "#E1306C", linkedin: "#0A66C2", twitter: "#000", youtube: "#FF0000",
-  tiktok: "#010101", facebook: "#1877F2", pinterest: "#E60023",
+  tiktok: "#010101", facebook: "#1877F2", pinterest: "#E60023", x: "#000",
 };
 
-export default function ProjectsPage() {
-  const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
+// Generate a consistent color from a string (product name)
+function stringToColor(str: string): string {
+  const colors = ["#6D28D9", "#0A66C2", "#E1306C", "#059669", "#D97706", "#DC2626"];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
 
-  const filtered = filter === "all" ? PROJECTS : PROJECTS.filter((p) => p.status === filter);
-  const activeCount = PROJECTS.filter((p) => p.status === "active").length;
+function mapProduct(p: EazeProduct): DisplayProject {
+  return {
+    id: String(p.id),
+    name: p.product_name || "Untitled",
+    url: p.website_url || "",
+    desc: p.product_desc || "",
+    color: stringToColor(p.product_name || ""),
+    status: (p.status === "paused" ? "paused" : "active") as "active" | "paused",
+    platforms: [],
+  };
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function ProjectsPage() {
+  const router = useRouter();
+  const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
+  const [projects, setProjects] = useState<DisplayProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingProductId, setLoadingProductId] = useState<string | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+
+  const handleProductClick = async (productId: string) => {
+    setLoadingProductId(productId);
+    try {
+      const res = await fetch(`/api/product-progress?productId=${productId}`);
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        router.push("/dashboard");
+        return;
+      }
+
+      const { nextStep, analysis, analysisId, selectedPlatforms } = data;
+
+      if (nextStep >= 6) {
+        // All steps complete → go to product dashboard
+        router.push(`/dashboard/${productId}`);
+        return;
+      }
+
+      // Load product state into Zustand store then resume onboarding
+      const store = useOnboarding.getState();
+      store.setProductId(productId);
+      if (analysis) store.setAnalysis(analysis);
+      if (analysisId) store.setAnalysisId(analysisId);
+      if (selectedPlatforms?.length) {
+        useOnboarding.setState({ selectedPlatforms });
+      }
+      store.setStep(nextStep);
+
+      // Navigate to onboarding with resume flag so it doesn't reset
+      router.push("/onboarding?resume=1");
+    } catch {
+      router.push("/dashboard");
+    } finally {
+      setLoadingProductId(null);
+    }
+  };
+
+  useEffect(() => {
+    // Load current user
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => { if (d.user) setUser(d.user); })
+      .catch(() => {});
+
+    // Load products from EazeMyAPI (via our server proxy)
+    fetch("/api/products")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.products) setProjects(d.products.map(mapProduct));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = filter === "all" ? projects : projects.filter((p) => p.status === filter);
+  const activeCount = projects.filter((p) => p.status === "active").length;
+  const pausedCount = projects.filter((p) => p.status === "paused").length;
+
+  const userInitial = user?.name?.[0]?.toUpperCase() || "U";
+  const userName = user?.name?.split(" ")[0] || "You";
 
   return (
     <div className="min-h-screen bg-[#F7F6FF]">
@@ -56,11 +143,16 @@ export default function ProjectsPage() {
         <div className="flex items-center gap-3">
           <button className="relative w-8 h-8 rounded-lg bg-[#F7F6FF] flex items-center justify-center hover:bg-[#EDE9FE] transition-all">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" stroke="#6C6C8A" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#DC2626] rounded-full" />
           </button>
-          <div className="w-8 h-8 rounded-full bg-[#6D28D9] flex items-center justify-center text-white text-xs font-bold">A</div>
-          <span className="text-sm font-semibold text-[#0F0E1A]">Alex</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="#6C6C8A" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <div className="w-8 h-8 rounded-full bg-[#6D28D9] flex items-center justify-center text-white text-xs font-bold">{userInitial}</div>
+          <span className="text-sm font-semibold text-[#0F0E1A]">{userName}</span>
+          <button
+            onClick={() => fetch("/api/auth/logout", { method: "POST" }).then(() => (window.location.href = "/login"))}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#6C6C8A] bg-[#F7F6FF] border border-[#EAEAF4] rounded-lg hover:text-[#6D28D9] hover:border-[#6D28D9] transition-all"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Sign out
+          </button>
         </div>
       </div>
 
@@ -79,10 +171,8 @@ export default function ProjectsPage() {
         {/* Stats chips */}
         <div className="flex flex-wrap gap-3 mb-6">
           {[
-            { label: "Active Products", value: `${activeCount}`, icon: "✓" },
-            { label: "Hours Saved", value: "12h", icon: "⏱" },
-            { label: "Avg Engagement", value: "+287%", icon: "📈" },
-            { label: "Posts Published", value: "47", icon: "📝" },
+            { label: "Active Products", value: String(activeCount), icon: "✓" },
+            { label: "Total Products", value: String(projects.length), icon: "📦" },
           ].map((chip) => (
             <div key={chip.label} className="flex items-center gap-2 px-4 py-2 bg-white border border-[#EAEAF4] rounded-full text-xs font-semibold text-[#3D3D5C] shadow-[0_1px_4px_rgba(0,0,0,.04)]">
               <span>{chip.icon}</span>
@@ -95,9 +185,9 @@ export default function ProjectsPage() {
         {/* Filter tabs */}
         <div className="flex items-center gap-2 mb-5">
           {[
-            { key: "all", label: "All" },
+            { key: "all", label: `All (${projects.length})` },
             { key: "active", label: `Active (${activeCount})` },
-            { key: "paused", label: "Paused (1)" },
+            { key: "paused", label: `Paused (${pausedCount})` },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -113,81 +203,111 @@ export default function ProjectsPage() {
           ))}
         </div>
 
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-white rounded-2xl border border-[#EAEAF4] p-5 animate-pulse">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-[#F7F6FF] rounded-xl" />
+                  <div className="flex-1">
+                    <div className="h-3 bg-[#F7F6FF] rounded w-24 mb-2" />
+                    <div className="h-2 bg-[#F7F6FF] rounded w-32" />
+                  </div>
+                </div>
+                <div className="h-2 bg-[#F7F6FF] rounded w-full mb-2" />
+                <div className="h-8 bg-[#F7F6FF] rounded-xl mt-4" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && projects.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 bg-[#EDE9FE] rounded-2xl flex items-center justify-center mb-4">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#6D28D9" strokeWidth="1.8" strokeLinecap="round"/></svg>
+            </div>
+            <h2 className="text-lg font-bold text-[#0F0E1A] mb-2">No products yet</h2>
+            <p className="text-sm text-[#6C6C8A] mb-6">Add your first product and let AI handle your marketing.</p>
+            <Link href="/onboarding" className="px-6 py-3 bg-[#6D28D9] text-white text-sm font-semibold rounded-xl hover:bg-[#5B21B6] transition-all">
+              Add Your First Product →
+            </Link>
+          </div>
+        )}
+
         {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((p) => (
-            <div key={p.id} className="bg-white rounded-2xl border border-[#EAEAF4] p-5 shadow-[0_2px_8px_rgba(0,0,0,.04)] hover:shadow-[0_10px_28px_rgba(109,40,217,.1)] transition-all">
-              {/* Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-base" style={{ background: p.color }}>
-                    {p.name[0]}
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-[#0F0E1A]">{p.name}</div>
-                    <div className="text-xs text-[#9898B8]">{p.url}</div>
-                  </div>
-                </div>
-                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${p.status === "active" ? "bg-[#D1FAE5] text-[#059669]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
-                  {p.status === "active" ? "Active" : "Paused"}
-                </span>
-              </div>
-
-              {/* Platforms */}
-              <div className="flex gap-1.5 mb-4">
-                {p.platforms.map((pl) => (
-                  <div key={pl} className="w-6 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white" style={{ background: PLATFORM_COLORS[pl] }}>
-                    {pl[0].toUpperCase()}
-                  </div>
-                ))}
-              </div>
-
-              {/* Metrics */}
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="bg-[#F7F6FF] rounded-xl p-2.5 text-center">
-                  <div className="text-sm font-extrabold text-[#0F0E1A]">{p.followers}</div>
-                  <div className="text-[10px] text-[#9898B8]">Followers</div>
-                  {p.followersUp !== 0 && (
-                    <div className={`text-[10px] font-semibold ${p.followersUp > 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
-                      {p.followersUp > 0 ? "↑" : "↓"}{Math.abs(p.followersUp)}%
+        {!loading && projects.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((p) => (
+              <div key={p.id} className="bg-white rounded-2xl border border-[#EAEAF4] p-5 shadow-[0_2px_8px_rgba(0,0,0,.04)] hover:shadow-[0_10px_28px_rgba(109,40,217,.1)] transition-all">
+                {/* Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-base" style={{ background: p.color }}>
+                      {p.name[0]}
                     </div>
-                  )}
-                </div>
-                <div className="bg-[#F7F6FF] rounded-xl p-2.5 text-center">
-                  <div className="text-sm font-extrabold text-[#0F0E1A]">{p.postsPerWeek}</div>
-                  <div className="text-[10px] text-[#9898B8]">Posts/wk</div>
-                  <div className="text-[10px] text-[#9898B8]">{p.status === "paused" ? "paused" : "active"}</div>
-                </div>
-                <div className="bg-[#F7F6FF] rounded-xl p-2.5 text-center">
-                  <div className="text-sm font-extrabold text-[#0F0E1A]">{p.engageRate}</div>
-                  <div className="text-[10px] text-[#9898B8]">Engage</div>
-                  {p.engageUp !== 0 && (
-                    <div className={`text-[10px] font-semibold ${p.engageUp > 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
-                      {p.engageUp > 0 ? "↑" : "↓"}{Math.abs(p.engageUp)}%
+                    <div>
+                      <div className="text-sm font-bold text-[#0F0E1A]">{p.name}</div>
+                      <div className="text-xs text-[#9898B8]">{p.url}</div>
                     </div>
-                  )}
+                  </div>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${p.status === "active" ? "bg-[#D1FAE5] text-[#059669]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
+                    {p.status === "active" ? "Active" : "Paused"}
+                  </span>
                 </div>
+
+                {/* Description */}
+                {p.desc && (
+                  <p className="text-xs text-[#6C6C8A] mb-3 leading-relaxed line-clamp-2">{p.desc}</p>
+                )}
+
+                {/* Platforms */}
+                {p.platforms.length > 0 ? (
+                  <div className="flex gap-1.5 mb-4">
+                    {p.platforms.map((pl) => (
+                      <div
+                        key={pl}
+                        title={pl}
+                        className="w-6 h-6 rounded flex items-center justify-center text-[9px] font-bold text-white"
+                        style={{ background: PLATFORM_COLORS[pl] || "#6D28D9" }}
+                      >
+                        {pl[0].toUpperCase()}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mb-4 text-xs text-[#9898B8]">No platforms connected yet</div>
+                )}
+
+                {/* CTA */}
+                <button
+                  onClick={() => handleProductClick(p.id)}
+                  disabled={loadingProductId === p.id}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#EDE9FE] text-[#6D28D9] text-xs font-bold rounded-xl hover:bg-[#6D28D9] hover:text-white transition-all disabled:opacity-60 disabled:cursor-wait"
+                >
+                  {loadingProductId === p.id ? (
+                    <>
+                      <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10"/></svg>
+                      Loading...
+                    </>
+                  ) : (
+                    "Open Project →"
+                  )}
+                </button>
               </div>
+            ))}
 
-              {/* CTA */}
-              <Link
-                href="/dashboard"
-                className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#EDE9FE] text-[#6D28D9] text-xs font-bold rounded-xl hover:bg-[#6D28D9] hover:text-white transition-all"
-              >
-                View Dashboard →
-              </Link>
-            </div>
-          ))}
-
-          {/* Add New card */}
-          <Link href="/onboarding" className="flex flex-col items-center justify-center bg-white rounded-2xl border-2 border-dashed border-[#C8C8E0] p-8 hover:border-[#6D28D9] hover:bg-[#EDE9FE]/20 transition-all group">
-            <div className="w-10 h-10 rounded-xl bg-[#EDE9FE] flex items-center justify-center mb-3 group-hover:bg-[#6D28D9] transition-all">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#6D28D9" strokeWidth="1.8" strokeLinecap="round" className="group-hover:stroke-white transition-all"/></svg>
-            </div>
-            <div className="text-sm font-bold text-[#3D3D5C] group-hover:text-[#6D28D9] transition-all">Add New Product</div>
-            <div className="text-xs text-[#9898B8] mt-1">Connect another startup or brand</div>
-          </Link>
-        </div>
+            {/* Add New card */}
+            <Link href="/onboarding" className="flex flex-col items-center justify-center bg-white rounded-2xl border-2 border-dashed border-[#C8C8E0] p-8 hover:border-[#6D28D9] hover:bg-[#EDE9FE]/20 transition-all group">
+              <div className="w-10 h-10 rounded-xl bg-[#EDE9FE] flex items-center justify-center mb-3 group-hover:bg-[#6D28D9] transition-all">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#6D28D9" strokeWidth="1.8" strokeLinecap="round" className="group-hover:stroke-white transition-all"/></svg>
+              </div>
+              <div className="text-sm font-bold text-[#3D3D5C] group-hover:text-[#6D28D9] transition-all">Add New Product</div>
+              <div className="text-xs text-[#9898B8] mt-1">Connect another startup or brand</div>
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );
