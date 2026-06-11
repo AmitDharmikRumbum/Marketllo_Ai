@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
   try {
     const url = `${BASE}/${PROJECT}/${VERSION}/users/show/${session.user.id}`;
     const res = await fetch(url, {
-      headers: { ...hdrs(), TOKEN: (session as Record<string, string>).eazeToken ?? "" },
+      headers: { ...hdrs(), TOKEN: (session as unknown as Record<string, string>).eazeToken ?? "" },
       cache: "no-store",
     });
     const text = await res.text();
