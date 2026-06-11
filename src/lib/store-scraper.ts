@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import * as cheerio from "cheerio";
 
 export interface StoreData {
   name: string;
@@ -9,6 +9,12 @@ export interface StoreData {
   reviews: string;
   platform: "ios" | "android" | "unknown";
 }
+
+const HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  Accept: "text/html,application/xhtml+xml",
+};
 
 /**
  * Detect which store the URL belongs to.
@@ -24,45 +30,33 @@ export function detectStore(url: string): "ios" | "android" | "unknown" {
  * Scrape App Store (iOS) page metadata.
  */
 async function scrapeAppStore(url: string): Promise<StoreData> {
-  let browser;
   try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 });
-    await page.waitForTimeout(1500);
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const html = await res.text();
+    const $ = cheerio.load(html);
 
-    const data = await page.evaluate(() => {
-      const getText = (sel: string) =>
-        (document.querySelector(sel) as HTMLElement)?.innerText?.trim() ?? "";
-      const getMeta = (name: string) =>
-        document.querySelector(`meta[name="${name}"]`)?.getAttribute("content") ?? "";
+    const name =
+      $("h1.product-header__title").text().trim() ||
+      $("title").text().split(" on the App Store")[0].trim();
 
-      return {
-        name:
-          getText("h1.product-header__title") ||
-          getText('[class*="product-header__title"]') ||
-          document.title.split(" on the App Store")[0].trim(),
-        developer:
-          getText(".product-header__identity a") ||
-          getText('[class*="product-header__identity"]'),
-        description:
-          getText(".section__description p") ||
-          getText('[class*="truncate-with-fade"]') ||
-          getMeta("description"),
-        category:
-          getText(".link.badge-link") ||
-          getText('[class*="badge-link"]') ||
-          "",
-        rating: getText(".we-rating-count") || getText('[class*="we-rating-count"]') || "",
-        reviews: "",
-      };
-    });
+    const developer =
+      $(".product-header__identity a").text().trim() ||
+      $('meta[name="author"]').attr("content")?.trim() || "";
 
-    return { ...data, platform: "ios" };
+    const description =
+      $(".section__description p").first().text().trim() ||
+      $('meta[name="description"]').attr("content")?.trim() || "";
+
+    const category =
+      $(".link.badge-link").first().text().trim() || "";
+
+    const rating =
+      $(".we-rating-count").text().trim() || "";
+
+    return { name, developer, description: description.slice(0, 800), category, rating, reviews: "", platform: "ios" };
   } catch {
     return { name: "", developer: "", description: "", category: "", rating: "", reviews: "", platform: "ios" };
-  } finally {
-    await browser?.close();
   }
 }
 
@@ -70,53 +64,39 @@ async function scrapeAppStore(url: string): Promise<StoreData> {
  * Scrape Google Play Store page metadata.
  */
 async function scrapePlayStore(url: string): Promise<StoreData> {
-  let browser;
   try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 });
-    await page.waitForTimeout(2000);
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const html = await res.text();
+    const $ = cheerio.load(html);
 
-    const data = await page.evaluate(() => {
-      const getText = (sel: string) =>
-        (document.querySelector(sel) as HTMLElement)?.innerText?.trim() ?? "";
+    const name =
+      $("h1").first().text().trim() ||
+      $('[itemprop="name"]').first().text().trim() || "";
 
-      // Play Store uses dynamic classes — use itemprop / aria
-      const name =
-        document.querySelector("h1")?.textContent?.trim() ||
-        document.querySelector('[itemprop="name"]')?.textContent?.trim() ||
-        "";
+    const developer =
+      $('[href*="developer"]').first().text().trim() ||
+      $('[itemprop="author"]').first().text().trim() || "";
 
-      const developer =
-        document.querySelector('[href*="developer"]')?.textContent?.trim() ||
-        document.querySelector('[itemprop="author"]')?.textContent?.trim() ||
-        "";
+    const description =
+      $('[data-g-id="description"]').text().trim() ||
+      $('meta[name="description"]').attr("content")?.trim() || "";
 
-      const description =
-        document.querySelector('[data-g-id="description"]')?.textContent?.trim() ||
-        getText('[jsname="sngebd"]') ||
-        document.querySelector('meta[name="description"]')?.getAttribute("content") ||
-        "";
+    const rating =
+      $('[itemprop="ratingValue"]').attr("content") ||
+      $('[itemprop="ratingValue"]').text().trim() || "";
 
-      const ratingEl = document.querySelector('[itemprop="ratingValue"]');
-      const rating = ratingEl?.getAttribute("content") || ratingEl?.textContent?.trim() || "";
+    const reviews =
+      $('[itemprop="ratingCount"]').attr("content") ||
+      $('[itemprop="ratingCount"]').text().trim() || "";
 
-      const reviewsEl = document.querySelector('[itemprop="ratingCount"]');
-      const reviews = reviewsEl?.getAttribute("content") || reviewsEl?.textContent?.trim() || "";
+    const category =
+      $('[itemprop="genre"]').text().trim() ||
+      $('a[href*="category"]').first().text().trim() || "";
 
-      const category =
-        document.querySelector('[itemprop="genre"]')?.textContent?.trim() ||
-        document.querySelector('a[href*="category"]')?.textContent?.trim() ||
-        "";
-
-      return { name, developer, description: description.slice(0, 800), category, rating, reviews };
-    });
-
-    return { ...data, platform: "android" };
+    return { name, developer, description: description.slice(0, 800), category, rating, reviews, platform: "android" };
   } catch {
     return { name: "", developer: "", description: "", category: "", rating: "", reviews: "", platform: "android" };
-  } finally {
-    await browser?.close();
   }
 }
 
