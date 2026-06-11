@@ -1,57 +1,52 @@
-import { chromium } from "playwright";
+import * as cheerio from "cheerio";
 
 /**
- * Scrape a website using Playwright (headless Chromium).
- * Returns cleaned text content up to 4000 chars.
+ * Scrape a website using fetch + cheerio (works on Vercel serverless).
+ * Returns cleaned text content up to 5000 chars.
  */
 export async function scrapeWebsite(url: string): Promise<string> {
-  let browser;
   try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20_000 });
-    // Wait a bit for JS-rendered content
-    await page.waitForTimeout(1500);
-
-    // Extract meaningful text: headings, paragraphs, lists, meta description
-    const content = await page.evaluate(() => {
-      // Meta description
-      const metaDesc =
-        document.querySelector('meta[name="description"]')?.getAttribute("content") ?? "";
-
-      // Main content areas (prefer main/article, fall back to body)
-      const root =
-        document.querySelector("main") ??
-        document.querySelector("article") ??
-        document.body;
-
-      const textNodes: string[] = [];
-
-      // Title
-      if (document.title) textNodes.push(`Title: ${document.title}`);
-      if (metaDesc) textNodes.push(`Meta: ${metaDesc}`);
-
-      // Collect text from visible elements
-      const tags = root.querySelectorAll("h1,h2,h3,h4,p,li,span,div");
-      const seen = new Set<string>();
-
-      tags.forEach((el) => {
-        const text = (el as HTMLElement).innerText?.trim();
-        if (!text || text.length < 10 || seen.has(text)) return;
-        // Skip elements with many nested children (likely containers)
-        if (el.children.length > 5) return;
-        seen.add(text);
-        textNodes.push(text);
-      });
-
-      return textNodes.join("\n");
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      signal: AbortSignal.timeout(15_000),
     });
 
-    return content.slice(0, 5000);
+    if (!res.ok) return "";
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    // Remove noise
+    $("script, style, nav, footer, header, noscript, iframe, svg").remove();
+
+    const textNodes: string[] = [];
+
+    // Title
+    const title = $("title").text().trim();
+    if (title) textNodes.push(`Title: ${title}`);
+
+    // Meta description
+    const metaDesc = $('meta[name="description"]').attr("content")?.trim();
+    if (metaDesc) textNodes.push(`Meta: ${metaDesc}`);
+
+    // Main content
+    const root = $("main, article, [role='main']").first();
+    const target = root.length ? root : $("body");
+
+    const seen = new Set<string>();
+    target.find("h1,h2,h3,h4,p,li").each((_, el) => {
+      const text = $(el).text().trim().replace(/\s+/g, " ");
+      if (!text || text.length < 10 || seen.has(text)) return;
+      seen.add(text);
+      textNodes.push(text);
+    });
+
+    return textNodes.join("\n").slice(0, 5000);
   } catch {
     return "";
-  } finally {
-    await browser?.close();
   }
 }
