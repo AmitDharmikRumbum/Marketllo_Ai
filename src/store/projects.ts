@@ -6,7 +6,7 @@ interface DisplayProject {
   url: string;
   desc: string;
   color: string;
-  status: "active" | "paused";
+  status: "active" | "inactive" | "pending";
   platforms: string[];
 }
 

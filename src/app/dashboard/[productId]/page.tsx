@@ -623,11 +623,24 @@ export default function ProductDashboardPage() {
       body:    JSON.stringify({ platformId, status: newStatus }),
     });
     if (res.ok) {
-      setPlatforms((prev) =>
-        prev.map((p) => p.id === platformId ? { ...p, status: newStatus } : p)
-      );
+      setPlatforms((prev) => {
+        const updated = prev.map((p) => p.id === platformId ? { ...p, status: newStatus } : p);
+
+        // Update product status based on platform states
+        const allDisabled = updated.every((p) => p.status === "DISABLED");
+        const anyConnected = updated.some((p) => p.status === "CONNECTED");
+        const productStatus = allDisabled ? "inactive" : anyConnected ? "active" : "pending";
+
+        fetch(`/api/products/${productId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: productStatus }),
+        }).catch(() => {});
+
+        return updated;
+      });
     }
-  }, []);
+  }, [productId]);
 
   // Group posts by platform
   const postsByPlatform = posts.reduce<Record<string, ScheduledPost[]>>((acc, p) => {

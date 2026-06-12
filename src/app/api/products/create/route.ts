@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       playstore_url: product.playstoreUrl || "",
       product_desc:  (product.description || "").slice(0, 255),
       logo_url:      logoUrl,
+      status:        "pending",
     });
 
     if (!productResult.success) {

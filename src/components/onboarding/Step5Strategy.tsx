@@ -219,6 +219,15 @@ export function Step5Strategy() {
         }
       }
 
+      // ── Step 3: Mark product as active ───────────────────────────────────────
+      if (productId) {
+        fetch(`/api/products/${productId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "active" }),
+        }).catch(() => {});
+      }
+
       setSaveStep("done");
       const finalProductId = productId; // capture before reset clears it
       reset();

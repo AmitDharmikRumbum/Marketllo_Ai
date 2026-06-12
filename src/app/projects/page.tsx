@@ -26,7 +26,7 @@ interface DisplayProject {
   url: string;
   desc: string;
   color: string;
-  status: "active" | "paused";
+  status: "active" | "inactive" | "pending";
   platforms: string[];
 }
 
@@ -46,13 +46,16 @@ function stringToColor(str: string): string {
 }
 
 function mapProduct(p: EazeProduct): DisplayProject {
+  const status =
+    p.status === "active"   ? "active"   :
+    p.status === "inactive" ? "inactive" : "pending";
   return {
     id: String(p.id),
     name: p.product_name || "Untitled",
     url: p.website_url || "",
     desc: p.product_desc || "",
     color: stringToColor(p.product_name || ""),
-    status: (p.status === "paused" ? "paused" : "active") as "active" | "paused",
+    status,
     platforms: [],
   };
 }
@@ -65,7 +68,7 @@ function ProjectsPageInner() {
   const shouldRefresh = searchParams.get("refresh") === "1";
 
   const { projects, user, loaded, setProjects, setUser, setLoaded } = useProjectsStore();
-  const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "inactive" | "pending">("all");
   const [loading, setLoading] = useState(!loaded);
   const [loadingProductId, setLoadingProductId] = useState<string | null>(null);
 
@@ -132,8 +135,9 @@ function ProjectsPageInner() {
   }, [shouldRefresh]);
 
   const filtered = filter === "all" ? projects : projects.filter((p) => p.status === filter);
-  const activeCount = projects.filter((p) => p.status === "active").length;
-  const pausedCount = projects.filter((p) => p.status === "paused").length;
+  const activeCount  = projects.filter((p) => p.status === "active").length;
+  const pendingCount = projects.filter((p) => p.status === "pending").length;
+  const inactiveCount = projects.filter((p) => p.status === "inactive").length;
 
   const userInitial = user?.name?.[0]?.toUpperCase() ?? "U";
   const userName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "You";
@@ -195,13 +199,14 @@ function ProjectsPageInner() {
         {/* Filter tabs */}
         <div className="flex items-center gap-2 mb-5">
           {[
-            { key: "all", label: `All (${projects.length})` },
-            { key: "active", label: `Active (${activeCount})` },
-            { key: "paused", label: `Paused (${pausedCount})` },
+            { key: "all",      label: `All (${projects.length})` },
+            { key: "active",   label: `Active (${activeCount})` },
+            { key: "pending",  label: `Pending (${pendingCount})` },
+            { key: "inactive", label: `Inactive (${inactiveCount})` },
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setFilter(tab.key as "all" | "active" | "paused")}
+              onClick={() => setFilter(tab.key as "all" | "active" | "inactive" | "pending")}
               className={`px-4 py-1.5 text-sm font-semibold rounded-full transition-all ${
                 filter === tab.key
                   ? "bg-[#6D28D9] text-white"
@@ -262,8 +267,12 @@ function ProjectsPageInner() {
                       <div className="text-xs text-[#9898B8]">{p.url}</div>
                     </div>
                   </div>
-                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${p.status === "active" ? "bg-[#D1FAE5] text-[#059669]" : "bg-[#FEF3C7] text-[#D97706]"}`}>
-                    {p.status === "active" ? "Active" : "Paused"}
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                    p.status === "active"   ? "bg-[#D1FAE5] text-[#059669]" :
+                    p.status === "inactive" ? "bg-[#FEE2E2] text-[#DC2626]" :
+                                             "bg-[#FEF3C7] text-[#D97706]"
+                  }`}>
+                    {p.status === "active" ? "Active" : p.status === "inactive" ? "Inactive" : "Pending Setup"}
                   </span>
                 </div>
 
