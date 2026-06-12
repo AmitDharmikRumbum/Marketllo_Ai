@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { useOnboarding } from "@/store/onboarding";
 
 const PLATFORMS = [
@@ -72,7 +73,10 @@ const PLATFORMS = [
 ];
 
 export function Step3Platforms() {
-  const { selectedPlatforms, togglePlatform, setStep, analysis } = useOnboarding();
+  const { selectedPlatforms, togglePlatform, setStep, analysis, productId, analysisId } = useOnboarding();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const autoSelectedRef = useRef(false);
 
   // Merge real scores from analysis into platform cards
   const platformsWithScores = PLATFORMS.map((p) => {
@@ -83,6 +87,22 @@ export function Step3Platforms() {
     const badgeText = score >= 80 ? "#059669" : score >= 60 ? "#6D28D9" : "#D97706";
     return { ...p, score, badge, badgeColor, badgeText };
   }).sort((a, b) => b.score - a.score);
+
+  // Auto-select top 3 platforms with score >= 80 on first load
+  useEffect(() => {
+    if (autoSelectedRef.current) return;
+    autoSelectedRef.current = true;
+
+    const autoSelect = platformsWithScores
+      .filter((p) => p.score >= 80)
+      .slice(0, 3)
+      .map((p) => p.id);
+
+    if (autoSelect.length > 0) {
+      useOnboarding.setState({ selectedPlatforms: autoSelect });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="p-8 h-full flex flex-col">
@@ -148,16 +168,53 @@ export function Step3Platforms() {
 
       <p className="text-xs text-[#9898B8] text-center mt-3">ℹ You can add or remove platforms anytime from your settings.</p>
 
+      {error && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-[#FEE2E2] border border-[#DC2626]/20 rounded-xl text-sm text-[#DC2626] mt-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          {error}
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-4">
         <button onClick={() => setStep(2)} className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-[#6C6C8A] border border-[#C8C8E0] rounded-xl hover:text-[#0F0E1A] transition-all">
           ← Back
         </button>
         <button
-          onClick={() => setStep(4)}
-          disabled={selectedPlatforms.length === 0}
+          onClick={async () => {
+            if (selectedPlatforms.length === 0) return;
+            setSaving(true);
+            setError("");
+            try {
+              const res = await fetch("/api/product-platforms", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  productId,
+                  analysisId,
+                  selectedPlatforms,
+                  allPlatforms: analysis?.platforms ?? [],
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.success) {
+                console.error("[Step3] platform save failed:", data);
+                setError(data.error || "Something went wrong. Please try again.");
+                setSaving(false);
+                return;
+              }
+            } catch (err) {
+              console.error("[Step3] platform save error:", err);
+              setError("Network error. Please check your connection and try again.");
+              setSaving(false);
+              return;
+            }
+            setSaving(false);
+            setStep(4);
+          }}
+          disabled={selectedPlatforms.length === 0 || saving}
           className="flex items-center gap-2 px-6 py-2.5 bg-[#6D28D9] text-white text-sm font-semibold rounded-xl hover:bg-[#5B21B6] hover:shadow-[0_6px_20px_rgba(109,40,217,.35)] transition-all disabled:opacity-50"
         >
-          Continue to Connect Accounts →
+          {saving ? "Saving..." : "Continue to Connect Accounts →"}
         </button>
       </div>
     </div>
