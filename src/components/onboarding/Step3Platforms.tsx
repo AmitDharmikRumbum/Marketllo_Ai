@@ -88,19 +88,22 @@ export function Step3Platforms() {
     return { ...p, score, badge, badgeColor, badgeText };
   }).sort((a, b) => b.score - a.score);
 
-  // Auto-select top 3 platforms with score >= 80 on first load
+  // Auto-select platforms on first load:
+  // - Take top 3 with score >= 80
+  // - If fewer than 2 qualify, fill up to 2 from the next highest scorers
   useEffect(() => {
     if (autoSelectedRef.current) return;
     autoSelectedRef.current = true;
 
-    const autoSelect = platformsWithScores
-      .filter((p) => p.score >= 80)
-      .slice(0, 3)
-      .map((p) => p.id);
+    const qualified = platformsWithScores.filter((p) => p.score >= 80).slice(0, 3);
+    const autoSelect = [...qualified];
 
-    if (autoSelect.length > 0) {
-      useOnboarding.setState({ selectedPlatforms: autoSelect });
+    if (autoSelect.length < 2) {
+      const remaining = platformsWithScores.filter((p) => !autoSelect.find((s) => s.id === p.id));
+      autoSelect.push(...remaining.slice(0, 2 - autoSelect.length));
     }
+
+    useOnboarding.setState({ selectedPlatforms: autoSelect.map((p) => p.id) });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
