@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
       user_id:       String(session.user.id),
       product_name:  productName,
       website_url:   product.websiteUrl,
-      appstore_url:  product.appUrl || "",
-      playstore_url: "",
+      appstore_url:  product.appstoreUrl || "",
+      playstore_url: product.playstoreUrl || "",
       product_desc:  (product.description || "").slice(0, 255),
       logo_url:      logoUrl,
     });

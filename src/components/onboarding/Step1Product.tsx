@@ -10,15 +10,15 @@ function isValidUrl(url: string) {
 
 const LOADING_STEPS = [
   "Reading website content...",
-  "Analyzing product positioning...",
+  "Scraping app store data...",
+  "Merging data sources...",
   "Identifying target audience...",
-  "Researching competitors...",
   "Generating recommendations...",
 ];
 
 export function Step1Product() {
   const router = useRouter();
-  const { product, setProduct, setStep, setAnalysis } = useOnboarding();
+  const { product, setProduct, setStep, setAnalysis, setProductId } = useOnboarding();
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState("");
@@ -63,7 +63,7 @@ export function Step1Product() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ websiteUrl: product.websiteUrl, description: product.description }),
+        body: JSON.stringify({ websiteUrl: product.websiteUrl, appstoreUrl: product.appstoreUrl, playstoreUrl: product.playstoreUrl, description: product.description }),
       });
 
       const data = await res.json();
@@ -75,6 +75,7 @@ export function Step1Product() {
       }
 
       setAnalysis(data.analysis);
+      setProductId(data.productId ?? null);
       setStep(2);
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -144,22 +145,41 @@ export function Step1Product() {
           </div>
         </div>
 
-        {/* App URL */}
+        {/* App Store URL */}
         <div>
           <div className="flex items-center gap-2 mb-1.5">
-            <label className="text-sm font-bold text-[#0F0E1A]">App URL</label>
+            <label className="text-sm font-bold text-[#0F0E1A]">App Store URL</label>
             <span className="text-xs text-[#9898B8] bg-[#F7F6FF] px-2 py-0.5 rounded-full">(Optional)</span>
-            <span className="text-xs text-[#9898B8]">Add your app or product link</span>
           </div>
           <div className="relative">
             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9898B8]">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="currentColor" opacity=".3"/><path d="M17 8H7l5-5 5 5zm0 8H7l5 5 5-5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/></svg>
             </span>
             <input
               type="url"
-              placeholder="https://yourapp.com"
-              value={product.appUrl}
-              onChange={(e) => setProduct({ appUrl: e.target.value })}
+              placeholder="https://apps.apple.com/app/..."
+              value={product.appstoreUrl}
+              onChange={(e) => setProduct({ appstoreUrl: e.target.value })}
+              className="w-full pl-10 pr-4 py-3 text-sm border border-[#C8C8E0] rounded-xl text-[#0F0E1A] placeholder:text-[#9898B8] focus:outline-none focus:border-[#6D28D9] focus:shadow-[0_0_0_3px_rgba(109,40,217,.1)] transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Play Store URL */}
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <label className="text-sm font-bold text-[#0F0E1A]">Play Store URL</label>
+            <span className="text-xs text-[#9898B8] bg-[#F7F6FF] px-2 py-0.5 rounded-full">(Optional)</span>
+          </div>
+          <div className="relative">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9898B8]">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 3l18 9-18 9V3z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>
+            </span>
+            <input
+              type="url"
+              placeholder="https://play.google.com/store/apps/..."
+              value={product.playstoreUrl}
+              onChange={(e) => setProduct({ playstoreUrl: e.target.value })}
               className="w-full pl-10 pr-4 py-3 text-sm border border-[#C8C8E0] rounded-xl text-[#0F0E1A] placeholder:text-[#9898B8] focus:outline-none focus:border-[#6D28D9] focus:shadow-[0_0_0_3px_rgba(109,40,217,.1)] transition-all"
             />
           </div>
@@ -213,7 +233,7 @@ export function Step1Product() {
 
         {/* Nav */}
         <div className="flex items-center justify-between pt-2">
-          <button type="button" onClick={() => router.push("/")} className="px-6 py-2.5 text-sm font-semibold text-[#6C6C8A] border border-[#C8C8E0] rounded-xl hover:text-[#0F0E1A] hover:border-[#0F0E1A] transition-all">
+          <button type="button" onClick={() => router.push("/projects")} className="px-6 py-2.5 text-sm font-semibold text-[#6C6C8A] border border-[#C8C8E0] rounded-xl hover:text-[#0F0E1A] hover:border-[#0F0E1A] transition-all">
             Cancel
           </button>
           <button

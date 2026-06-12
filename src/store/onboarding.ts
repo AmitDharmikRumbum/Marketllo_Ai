@@ -29,9 +29,12 @@ export interface OnboardingState {
   step: number;
   product: {
     websiteUrl: string;
-    appUrl: string;
+    appstoreUrl: string;
+    playstoreUrl: string;
     description: string;
   };
+  productId: string | null;
+  analysisId: string | null;
   analysis: ProductAnalysis | null;
   selectedPlatforms: string[];
   connectedAccounts: string[];
@@ -42,6 +45,8 @@ export interface OnboardingState {
   };
   setStep: (step: number) => void;
   setProduct: (product: Partial<OnboardingState["product"]>) => void;
+  setProductId: (id: string | null) => void;
+  setAnalysisId: (id: string | null) => void;
   setAnalysis: (analysis: ProductAnalysis | null) => void;
   togglePlatform: (platform: string) => void;
   connectAccount: (platform: string) => void;
@@ -53,7 +58,9 @@ export const useOnboarding = create<OnboardingState>()(
   persist(
     (set) => ({
       step: 1,
-      product: { websiteUrl: "", appUrl: "", description: "" },
+      product: { websiteUrl: "", appstoreUrl: "", playstoreUrl: "", description: "" },
+      productId: null,
+      analysisId: null,
       analysis: null,
       selectedPlatforms: ["instagram", "linkedin"],
       connectedAccounts: [],
@@ -61,6 +68,8 @@ export const useOnboarding = create<OnboardingState>()(
 
       setStep: (step) => set({ step }),
       setProduct: (product) => set((s) => ({ product: { ...s.product, ...product } })),
+      setProductId: (productId) => set({ productId }),
+      setAnalysisId: (analysisId) => set({ analysisId }),
       setAnalysis: (analysis) => set({ analysis }),
       togglePlatform: (platform) =>
         set((s) => ({
@@ -77,7 +86,16 @@ export const useOnboarding = create<OnboardingState>()(
       setStrategy: (strategy) =>
         set((s) => ({ strategy: { ...s.strategy, ...strategy } })),
       reset: () =>
-        set({ step: 1, product: { websiteUrl: "", appUrl: "", description: "" }, analysis: null, selectedPlatforms: ["instagram", "linkedin"], connectedAccounts: [], strategy: { postsPerWeek: 6, contentMix: { posts: 3, reels: 2, carousels: 1 }, voiceStyle: "professional" } }),
+        set({
+          step: 1,
+          product: { websiteUrl: "", appstoreUrl: "", playstoreUrl: "", description: "" },
+          productId: null,
+          analysisId: null,
+          analysis: null,
+          selectedPlatforms: ["instagram", "linkedin"],
+          connectedAccounts: [],
+          strategy: { postsPerWeek: 6, contentMix: { posts: 3, reels: 2, carousels: 1 }, voiceStyle: "professional" },
+        }),
     }),
     { name: "marketify-onboarding" }
   )
