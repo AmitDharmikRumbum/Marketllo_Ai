@@ -77,6 +77,7 @@ export function Step3Platforms() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const autoSelectedRef = useRef(false);
+  const savedPlatformsRef = useRef<string[]>([]); // platforms already in DB
 
   // Merge real scores from analysis into platform cards
   const platformsWithScores = PLATFORMS.map((p) => {
@@ -87,6 +88,19 @@ export function Step3Platforms() {
     const badgeText = score >= 80 ? "#059669" : score >= 60 ? "#6D28D9" : "#D97706";
     return { ...p, score, badge, badgeColor, badgeText };
   }).sort((a, b) => b.score - a.score);
+
+  // Load already-saved platforms from DB so we can skip re-saving unchanged selections
+  useEffect(() => {
+    if (!productId) return;
+    fetch(`/api/product-platforms?productId=${productId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.platforms?.length) {
+          savedPlatformsRef.current = d.platforms.map((p: { platform: string }) => p.platform);
+        }
+      })
+      .catch(() => {});
+  }, [productId]);
 
   // Auto-select platforms on first load:
   // - Take top 3 with score >= 80
@@ -193,33 +207,44 @@ export function Step3Platforms() {
         <button
           onClick={async () => {
             if (selectedPlatforms.length === 0) return;
-            setSaving(true);
-            setError("");
-            try {
-              const res = await fetch("/api/product-platforms", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  productId,
-                  analysisId,
-                  selectedPlatforms,
-                  allPlatforms: analysis?.platforms ?? [],
-                }),
-              });
-              const data = await res.json();
-              if (!res.ok || !data.success) {
-                console.error("[Step3] platform save failed:", data);
-                setError(data.error || "Something went wrong. Please try again.");
+
+            // Skip saving if selection hasn't changed from what's already in DB
+            const saved = savedPlatformsRef.current;
+            const same =
+              saved.length === selectedPlatforms.length &&
+              selectedPlatforms.every((p) => saved.includes(p));
+
+            if (!same) {
+              setSaving(true);
+              setError("");
+              try {
+                const res = await fetch("/api/product-platforms", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    productId,
+                    analysisId,
+                    selectedPlatforms,
+                    allPlatforms: analysis?.platforms ?? [],
+                  }),
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                  console.error("[Step3] platform save failed:", data);
+                  setError(data.error || "Something went wrong. Please try again.");
+                  setSaving(false);
+                  return;
+                }
+                // Update ref so back→forward won't re-save
+                savedPlatformsRef.current = [...selectedPlatforms];
+              } catch (err) {
+                console.error("[Step3] platform save error:", err);
+                setError("Network error. Please check your connection and try again.");
                 setSaving(false);
                 return;
               }
-            } catch (err) {
-              console.error("[Step3] platform save error:", err);
-              setError("Network error. Please check your connection and try again.");
               setSaving(false);
-              return;
             }
-            setSaving(false);
             setStep(4);
           }}
           disabled={selectedPlatforms.length === 0 || saving}
