@@ -104,6 +104,14 @@ export function Step3Platforms() {
     }
 
     useOnboarding.setState({ selectedPlatforms: autoSelect.map((p) => p.id) });
+
+    // Save all platform names to DB
+    const allPlatformNames = platformsWithScores.map((p) => p.id).join(",");
+    fetch("/api/save-platform-list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform_names: allPlatformNames }),
+    }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
