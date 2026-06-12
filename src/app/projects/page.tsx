@@ -46,9 +46,10 @@ function stringToColor(str: string): string {
 }
 
 function mapProduct(p: EazeProduct): DisplayProject {
+  // Treat null/empty as "active" for products created before status field was added
   const status =
-    p.status === "active"   ? "active"   :
-    p.status === "inactive" ? "inactive" : "pending";
+    p.status === "inactive" ? "inactive" :
+    p.status === "pending"  ? "pending"  : "active";
   return {
     id: String(p.id),
     name: p.product_name || "Untitled",
