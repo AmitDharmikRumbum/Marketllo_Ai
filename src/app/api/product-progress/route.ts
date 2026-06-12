@@ -15,8 +15,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "productId is required" }, { status: 400 });
     }
 
-    // Parallel: fetch analysis + platforms
-    const [analysisResult, platformsResult] = await Promise.all([
+    // Parallel: fetch product + analysis + platforms
+    const [productResult, analysisResult, platformsResult] = await Promise.all([
+      eazeQuery("user_products", { user_id: String(session.user.id) }),
       eazeQuery("get-product-analysis", { product_id: productId }),
       eazeQuery("get_product_platforms", { product_id: productId }),
     ]);
@@ -87,11 +88,21 @@ export async function GET(req: NextRequest) {
       nextStep = 6; // fully set up → show dashboard
     }
 
+    // Find the specific product record
+    const allProducts = toArray<Record<string, string>>(productResult.data);
+    const productRow = allProducts.find((p) => String(p.id) === String(productId));
+
     return NextResponse.json({
       nextStep,
       analysis,
       analysisId,
       selectedPlatforms,
+      product: productRow ? {
+        websiteUrl:   productRow.website_url   ?? "",
+        appstoreUrl:  productRow.appstore_url  ?? "",
+        playstoreUrl: productRow.playstore_url ?? "",
+        description:  productRow.product_desc  ?? "",
+      } : null,
     });
   } catch (err) {
     console.error("[product-progress] error:", err);

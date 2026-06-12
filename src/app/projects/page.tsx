@@ -84,7 +84,7 @@ function ProjectsPageInner() {
         return;
       }
 
-      const { nextStep, analysis, analysisId, selectedPlatforms } = data;
+      const { nextStep, analysis, analysisId, selectedPlatforms, product } = data;
 
       if (nextStep >= 6) {
         // All steps complete → go to product dashboard
@@ -92,9 +92,10 @@ function ProjectsPageInner() {
         return;
       }
 
-      // Load product state into Zustand store then resume onboarding
+      // Restore full product state into Zustand store before resuming
       const store = useOnboarding.getState();
       store.setProductId(productId);
+      if (product) store.setProduct(product);
       if (analysis) store.setAnalysis(analysis);
       if (analysisId) store.setAnalysisId(analysisId);
       if (selectedPlatforms?.length) {

@@ -18,7 +18,7 @@ const LOADING_STEPS = [
 
 export function Step1Product() {
   const router = useRouter();
-  const { product, setProduct, setStep, setAnalysis, setProductId } = useOnboarding();
+  const { product, productId, setProduct, setStep, setAnalysis, setProductId } = useOnboarding();
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState("");
@@ -60,6 +60,20 @@ export function Step1Product() {
     }
 
     try {
+      // If product already exists, update it in DB before re-analysing
+      if (productId) {
+        await fetch(`/api/products/${productId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            website_url:   product.websiteUrl,
+            appstore_url:  product.appstoreUrl,
+            playstore_url: product.playstoreUrl,
+            product_desc:  product.description,
+          }),
+        });
+      }
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
